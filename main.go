@@ -13,36 +13,23 @@ func init() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 }
 
-func run_monitor(mon *SmartProUPSMonitor) {
-
-	var err error
-
-	metrics, err := mon.GetStats()
-	if err != nil {
-		log.Error().Err(err).Msg("get metrics error")
-	}
-	log.Info().
-		Interface("metrics", metrics).
-		Send()
-
-}
-
 func main() {
-
 	var vid uint16 = 0x09ae
 	var pid uint16 = 0x0001
-	m, err := NewSmartProUPSMonitor(vid, pid)
+
+	h := NewHttpApp(1000)
+	mon, err := NewSmartProUPSMonitor(vid, pid)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to open monitor")
 	} else {
 		log.Info().
-			Str("manufacturer", m.manufacturer).
-			Str("product", m.product).
-			Str("protocol", m.protocolName).
-			Send()
+			Str("manufacturer", mon.manufacturer).
+			Str("product", mon.product).
+			Str("protocol", mon.protocolName).
+			Msg("serving")
 
-		run_monitor(m)
-
-		m.Close()
+		go h.startServer("0.0.0.0:8080")
+		h.pollMetrics(mon) // blocks until SIGTERM
+		mon.Close()
 	}
 }

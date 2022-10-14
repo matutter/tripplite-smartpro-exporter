@@ -1,5 +1,7 @@
 github.com/coreos/go-systemd/v22 v22.3.3-0.20220203105225-a9a7ef127534/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/godbus/dbus/v5 v5.0.4/go.mod h1:xhWf0FNVPg57R7Z0UbKHbJfkEywrmjJnf7w5xrFpKfA=
+github.com/google/gousb v1.1.2 h1:1BwarNB3inFTFhPgUEfah4hwOPuDz/49I0uX8XNginU=
+github.com/google/gousb v1.1.2/go.mod h1:GGWUkK0gAXDzxhwrzetW592aOmkkqSGcj5KLEgmCVUg=
 github.com/gotmc/libusb v1.0.22 h1:+5cE9IHMcJF2R39vVRff0TK5jK4TW0pk2FQNyoxMn7M=
 github.com/gotmc/libusb v1.0.22/go.mod h1:fa+kQZl2bW/pna0xryZpEE/ckwD8gqOWjNCewHGp+Aw=
 github.com/mattn/go-colorable v0.1.12 h1:jF+Du6AlPIjs2BiUiQlKOX0rt3SujHxPnksPKZbaA40=

@@ -94,6 +94,8 @@ type SmartProUPSMonitor struct {
 	manufacturer    string
 	product         string
 	serial          string
+	streaming       bool
+	debugUSB        bool
 }
 
 func NewSmartProUPSMonitor(vid uint16, pid uint16) (*SmartProUPSMonitor, error) {
@@ -125,6 +127,8 @@ func NewSmartProUPSMonitor(vid uint16, pid uint16) (*SmartProUPSMonitor, error) 
 		manufacturer:    "",
 		product:         "",
 		serial:          "",
+		streaming:       false,
+		debugUSB:        false,
 	}
 
 	dd, err := dev.GetDeviceDescriptor()
@@ -246,17 +250,21 @@ func (m *SmartProUPSMonitor) SendCommand(cmd []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	log.Debug().
-		Hex("cmd", buffer).
-		Str("cmd_code", string(cmd)).
-		Hex("reply", reply).
-		Bool("ok", done).
-		Send()
+	if m.debugUSB {
+		// Too chatty even for debug
+		log.Debug().
+			Hex("cmd", buffer).
+			Str("cmd_code", string(cmd)).
+			Hex("reply", reply).
+			Bool("ok", done).
+			Send()
+	}
 
 	return reply, err
 }
 
 func (m *SmartProUPSMonitor) Close() {
+	m.closeStream()
 	if m.h != nil {
 		i := int(m.interfaceId)
 		m.h.ReleaseInterface(i)
@@ -273,29 +281,66 @@ func (m *SmartProUPSMonitor) Close() {
 }
 
 type UPSMetrics struct {
-	VendorID              string  `json:"ups.vendorid"`
-	ProductID             string  `json:"ups.productid"`
-	Manufacturer          string  `json:"ups.mfr"`
-	Model                 string  `json:"ups.model"`
-	BatteryCharge         float64 `json:"battery.charge"`
-	BatteryVoltage        float64 `json:"battery.voltage"`
-	BatteryVoltageNominal float64 `json:"battery.voltage.nominal"`
-	FirmwareVersion       string  `json:"ups.firmware"`
-	InputFrequency        float64 `json:"input.frequency"`
-	InputFrequencyNominal float64 `json:"input.frequency.nominal"`
-	InputVoltage          float64 `json:"input.voltage"`
-	InputVoltageMaximum   float64 `json:"input.voltage.maximum"`
-	InputVoltageMinimum   float64 `json:"input.voltage.minimum"`
-	InputVoltageNominal   float64 `json:"input.voltage.nominal"`
-	Load                  uint    `json:"ups.load"`
-	LoadBanks             int     `json:"ups.load_banks"`
-	Power                 uint    `json:"ups.power.nominal"`
-	PowerUnit             string  `json:"ups.power.unit"`
-	Status                string  `json:"ups.status"`
-	Temperature           float64 `json:"ups.temperature"`
-	TemperatureC          float64 `json:"ups.temperature.c"`
-	TemperatureF          float64 `json:"ups.temperature.f"`
-	UnitId                string  `json:"ups.id"`
+	VendorID              string    `json:"ups.vendorid"`
+	ProductID             string    `json:"ups.productid"`
+	Manufacturer          string    `json:"ups.mfr"`
+	Model                 string    `json:"ups.model"`
+	BatteryCharge         float64   `json:"battery.charge"`
+	BatteryVoltage        float64   `json:"battery.voltage"`
+	BatteryVoltageNominal float64   `json:"battery.voltage.nominal"`
+	FirmwareVersion       string    `json:"ups.firmware"`
+	InputFrequency        float64   `json:"input.frequency"`
+	InputFrequencyNominal float64   `json:"input.frequency.nominal"`
+	InputVoltage          float64   `json:"input.voltage"`
+	InputVoltageMaximum   float64   `json:"input.voltage.maximum"`
+	InputVoltageMinimum   float64   `json:"input.voltage.minimum"`
+	InputVoltageNominal   float64   `json:"input.voltage.nominal"`
+	Load                  uint      `json:"ups.load"`
+	LoadBanks             int       `json:"ups.load_banks"`
+	Power                 uint      `json:"ups.power.nominal"`
+	PowerUnit             string    `json:"ups.power.unit"`
+	Status                string    `json:"ups.status"`
+	Temperature           float64   `json:"ups.temperature"`
+	TemperatureC          float64   `json:"ups.temperature.c"`
+	TemperatureF          float64   `json:"ups.temperature.f"`
+	UnitId                string    `json:"ups.id"`
+	Timestamp             time.Time `json:"reading.time"`
+	UnixTimestamp         int64     `json:"reading.time.unix"`
+}
+
+func (m *SmartProUPSMonitor) closeStream() {
+	m.streaming = false
+}
+
+func monitorStreamLoop(m *SmartProUPSMonitor, statChan chan *UPSMetrics, errChan chan error, delayMs time.Duration) {
+	log.Info().Dur("delay", delayMs).Msg("stream started")
+	var ms time.Duration = 0 * time.Millisecond
+	var delayStep time.Duration = 50 * time.Millisecond
+
+	if delayMs < time.Duration(delayStep) {
+		delayMs = delayStep
+	}
+
+	for m.streaming {
+		metrics, err := m.GetStats()
+		if err != nil {
+			errChan <- err
+		} else {
+			statChan <- metrics
+		}
+
+		for ms = 0; m.streaming && ms < delayMs; ms += delayStep {
+			time.Sleep(delayStep)
+		}
+	}
+}
+
+func (m *SmartProUPSMonitor) openStream(delayMs time.Duration) (chan *UPSMetrics, chan error) {
+	metrics := make(chan *UPSMetrics, 1)
+	errors := make(chan error, 1)
+	go monitorStreamLoop(m, metrics, errors, delayMs)
+	m.streaming = true
+	return metrics, errors
 }
 
 func (m *SmartProUPSMonitor) GetStats() (*UPSMetrics, error) {
@@ -306,10 +351,13 @@ func (m *SmartProUPSMonitor) GetStats() (*UPSMetrics, error) {
 	switchable_load_banks := 0
 
 	var err error = nil
-	metrics := UPSMetrics{}
+	now := time.Now()
+	metrics := UPSMetrics{Timestamp: now, UnixTimestamp: now.Unix()}
 	messages := map[byte][]byte{}
 	command_codes := []byte{
 		// 'B',
+		// 'H',
+		// 'X',
 		'D', // ok
 		'F', // ok
 		'L', // ok
@@ -448,14 +496,17 @@ func (m *SmartProUPSMonitor) GetStats() (*UPSMetrics, error) {
 			bc := (100.0 * math.Sqrt((bv_12v-MIN_VOLT)/(MAX_VOLT-MIN_VOLT)))
 			metrics.BatteryCharge = math.Round(bc*100.0) / 100.0
 		}
-		log.Debug().Float64("bc (12v)", bv_12v).Float64("bc", metrics.BatteryCharge).Send()
+		// log.Debug().Float64("bc (12v)", bv_12v).Float64("bc", metrics.BatteryCharge).Send()
 	}
 
 	// min / max
 	if data, ok := messages['M']; ok {
-		tmp, _ := strconv.ParseInt(string(data[2:3]), 16, 32)
+		tmp, _ := strconv.ParseInt(string(data[1:3]), 16, 32)
 		ivmin := float64(tmp) * input_voltage_scaled / 120.0
 		metrics.InputVoltageMinimum = math.Round(ivmin*100.0) / 100.0
+
+		// TODO - this value appears always 0, it should be 199
+		// log.Info().Float64("ivmin", ivmin).Float64("metrics.InputVoltageMinimum", metrics.InputVoltageMinimum).Float64("tmp", float64(tmp)).Bytes("raw", data[1:3]).Bytes("data", data).Send()
 
 		tmp, _ = strconv.ParseInt(string(data[3:5]), 16, 32)
 		ivmax := float64(tmp) * input_voltage_scaled / 120.0

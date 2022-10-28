@@ -1,0 +1,5 @@
+url: http://127.0.0.1:8080
+secret: c37yj63f39hrCF1h373UlK8IdeFJ29g74l2I88N02eZmINW27
+delay: 5s
+auto_configure: yes
+debug: yes

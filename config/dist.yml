@@ -1,0 +1,5 @@
+scripts:
+  - name: warning
+    charge: 65
+    script: echo "UPS battery charge has reached 65%" | wall
+    cancel: echo "UPS power is restored" | wall

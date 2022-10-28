@@ -1,0 +1,18 @@
+listen: 0.0.0.0:8080
+debug: true
+vendor_id: 09ae
+product_id: 0001
+secret: c37yj63f39hrCF1h373UlK8IdeFJ29g74l2I88N02eZmINW27
+delay: 5s
+history_size: 1000
+scripts:
+  - name: warning
+    charge: 90
+    script: echo "UPS battery charge has reached 65%" | wall
+    cancel: echo "UPS power is restored" | wall
+    shared: yes
+  - name: shutdown
+    charge: 90
+    script: shutdown --poweroff +2
+    cancel: shutdown -c
+    shared: no

@@ -1,0 +1,16 @@
+listen: 0.0.0.0:8080
+debug: false
+vendor_id: 09ae
+product_id: 0001
+secret: c37yj63f39hrCF1h373UlK8IdeFJ29g74l2I88N02eZmINW27
+delay: 5s
+history_size: 1000
+scripts:
+  - name: stop services
+    charge: 80
+    script: docker-compose -f ~/docker-compose.yml down
+    cancel: docker-compose -f ~/docker-compose.yml up
+  - name: shutdown
+    charge: 65
+    script: shutdown --poweroff +1
+    cancel: shutdown -c

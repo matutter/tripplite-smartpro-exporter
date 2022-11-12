@@ -8,11 +8,15 @@ history_size: 1000
 scripts:
   - name: warning
     charge: 90
-    script: echo "UPS battery charge has reached 65%" | wall
+    status: OB
+    script: echo "UPS battery charge has reached 90%" | wall
     cancel: echo "UPS power is restored" | wall
-    shared: yes
+    public: yes
+    enabled: yes
   - name: shutdown
     charge: 90
+    status: OB
     script: shutdown --poweroff +2
     cancel: shutdown -c
-    shared: no
+    public: no
+    enabled: yes

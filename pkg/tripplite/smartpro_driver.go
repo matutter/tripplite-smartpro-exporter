@@ -147,6 +147,10 @@ func NewSmartProUPSMonitor(vid uint16, pid uint16) (*SmartProUPSMonitor, error) 
 	return &mon, nil
 }
 
+func (m SmartProUPSMonitor) IsStreaming() bool {
+	return m.streaming
+}
+
 func (m *SmartProUPSMonitor) setReport(reportId uint16, msg []byte) (int, error) {
 
 	bytes_sent, err := m.h.ControlTransfer(
@@ -272,7 +276,7 @@ func (m *SmartProUPSMonitor) SendCommand(cmd []byte) ([]byte, error) {
 }
 
 func (m *SmartProUPSMonitor) Close() {
-	m.closeStream()
+	m.CloseStream()
 	if m.h != nil {
 		i := int(m.interfaceId)
 		m.h.ReleaseInterface(i)
@@ -315,7 +319,7 @@ type UPSMetrics struct {
 	UnixTimestamp         int64     `json:"UnixTimestamp"`
 }
 
-func (m *SmartProUPSMonitor) closeStream() {
+func (m *SmartProUPSMonitor) CloseStream() {
 	m.streaming = false
 }
 

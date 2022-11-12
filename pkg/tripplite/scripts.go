@@ -2,24 +2,34 @@ package tripplite
 
 import (
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/rs/zerolog/log"
 )
 
-type WatchScript struct {
-	Name           string  `yaml:"name"`
-	Charge         float64 `yaml:"charge" env-default:"20.0"`
-	Status         string  `yaml:"status" env-default:"OB"`
-	ShutdownScript string  `yaml:"script"`
-	CancelScript   string  `yaml:"cancel"`
-	Shell          string  `yaml:"shell" env-default:"/bin/sh"`
-	Shared         bool    `yaml:"shared"`
-	RemoteOnly     bool    `yaml:"remote_only"`
+// From API endpoints
+type PublicScript struct {
+	Name           string  `json:"name"`
+	Charge         float64 `json:"charge"`
+	Status         string  `json:"status"`
+	ShutdownScript string  `json:"script"`
+	CancelScript   string  `json:"cancel"`
 }
 
-func (w WatchScript) getCharge() float64 {
+// From Configs
+type Script struct {
+	Public         bool    `json:"public" yaml:"public"`
+	RemoteOnly     bool    `json:"remote_only" yaml:"remote_only"`
+	Name           string  `json:"name" yaml:"name"`
+	Charge         float64 `json:"charge" yaml:"charge"`
+	Status         string  `json:"status" yaml:"status"`
+	ShutdownScript string  `json:"script" yaml:"script"`
+	CancelScript   string  `json:"cancel" yaml:"cancel"`
+}
+
+func (w Script) getCharge() float64 {
 	v := float64(w.Charge)
 	if v <= 0 {
 		return 0.0
@@ -30,7 +40,7 @@ func (w WatchScript) getCharge() float64 {
 	return v
 }
 
-func (w WatchScript) Check(metrics UPSMetrics) bool {
+func (w Script) Check(metrics UPSMetrics) bool {
 	// Generally the staus must be "OB" (on battery) and...
 	if strings.EqualFold(metrics.Status, w.Status) {
 		// the charge needs to fall below the user-defined charge
@@ -41,26 +51,55 @@ func (w WatchScript) Check(metrics UPSMetrics) bool {
 	return false
 }
 
-type WatchScriptStatus struct {
-	Script  WatchScript
+type WatcherScript struct {
+	Script
 	Active  bool
 	Running bool
+	Enabled bool
 }
 
-func (w *WatchScriptStatus) Run(do_cancel bool) error {
+func (s WatcherScript) ToPublicScript() PublicScript {
+	return PublicScript{
+		Name:           s.Name,
+		Charge:         s.Charge,
+		Status:         s.Status,
+		ShutdownScript: s.ShutdownScript,
+		CancelScript:   s.CancelScript,
+	}
+}
+
+func (w *WatcherScript) FromScript(s Script) *WatcherScript {
+	w.Name = s.Name
+	w.Charge = s.Charge
+	w.Status = s.Status
+	w.ShutdownScript = s.ShutdownScript
+	w.CancelScript = s.CancelScript
+	return w
+}
+
+func (w WatcherScript) GetShell() string {
+	shell := os.Getenv("SHELL")
+	if len(shell) == 0 {
+		shell = "/bin/sh"
+	}
+	return shell
+}
+
+func (w *WatcherScript) Run(do_cancel bool) error {
 	if w.Running {
 		return nil
 	}
 	w.Running = true
 
-	script := w.Script.ShutdownScript
+	script := w.ShutdownScript
 	if do_cancel {
-		script = w.Script.CancelScript
+		script = w.CancelScript
 	}
 
-	log.Info().Str("script", w.Script.Name).Str("exec", script).Msg("running")
+	log.Info().Str("script", w.Name).Str("exec", script).Msg("running")
 
-	shell := exec.Command(w.Script.Shell, "-")
+	shell_exec := w.GetShell()
+	shell := exec.Command(shell_exec, "-")
 	stdin, err := shell.StdinPipe()
 	if err == nil {
 		defer stdin.Close()
@@ -69,7 +108,7 @@ func (w *WatchScriptStatus) Run(do_cancel bool) error {
 		if err == nil {
 			io.WriteString(stdin, script+"\n")
 			err = shell.Wait()
-			log.Info().Str("script", w.Script.Name).Int("exit", shell.ProcessState.ExitCode()).Msg("script complete")
+			log.Info().Str("script", w.Name).Int("exit", shell.ProcessState.ExitCode()).Msg("script complete")
 		}
 	}
 
@@ -78,35 +117,86 @@ func (w *WatchScriptStatus) Run(do_cancel bool) error {
 }
 
 type Watcher struct {
-	scripts []*WatchScriptStatus
+	Scripts map[string]*WatcherScript
 }
 
-func (w *Watcher) AddScript(script WatchScript) {
-	wst := WatchScriptStatus{Script: script, Active: false}
-	if w.scripts == nil {
-		w.scripts = []*WatchScriptStatus{&wst}
-	} else {
-		w.scripts = append(w.scripts, &wst)
+func NewWatcher() *Watcher {
+	w := Watcher{Scripts: map[string]*WatcherScript{}}
+	return &w
+}
+
+func (w *Watcher) AddScript(script Script, enableRemote bool) {
+
+	if w.Scripts == nil {
+		log.Fatal().Msg("script map is nil")
+		return
+	}
+
+	w.Scripts[strings.ToLower(script.Name)] = &WatcherScript{
+		Script:  script,
+		Active:  false,
+		Running: false,
+		Enabled: enableRemote || !script.RemoteOnly,
+	}
+
+	log.Info().Interface("script", script).Msgf("loaded script %s", script.Name)
+}
+
+func (w *Watcher) AddPublicScript(script PublicScript) {
+	if w.Scripts == nil {
+		log.Fatal().Msg("script map is nil")
+		return
+	}
+
+	w.Scripts[strings.ToLower(script.Name)] = &WatcherScript{
+		Script: Script{
+			Public:         true,
+			RemoteOnly:     false,
+			Name:           script.Name,
+			Charge:         script.Charge,
+			Status:         script.Status,
+			ShutdownScript: script.ShutdownScript,
+			CancelScript:   script.CancelScript,
+		},
+		Active:  false,
+		Running: false,
+		Enabled: true,
+	}
+}
+
+func (w *Watcher) DisableAll() {
+	for _, script := range w.Scripts {
+		script.Enabled = false
+		if script.Active {
+			script.Run(true)
+		}
 	}
 }
 
 func (w Watcher) GetSize() int {
-	if w.scripts == nil {
+	if w.Scripts == nil {
 		return 0
 	}
-	return len(w.scripts)
+	return len(w.Scripts)
 }
 
-func (w *Watcher) OnMetrics(m *UPSMetrics) {
-	if w.scripts == nil {
-		return
+func (w *Watcher) OnMetrics(m *UPSMetrics) bool {
+	if w.Scripts == nil {
+		return false
 	}
-	for _, wst := range w.scripts {
-		if wst.Script.RemoteOnly {
+
+	any_active := false
+
+	for _, wst := range w.Scripts {
+		if !wst.Enabled {
 			continue
 		}
 
 		active := wst.Script.Check(*m)
+		if active {
+			any_active = true
+		}
+
 		if !wst.Active && active {
 			log.Info().
 				Str("script", wst.Script.Name).
@@ -125,4 +215,6 @@ func (w *Watcher) OnMetrics(m *UPSMetrics) {
 		}
 		wst.Active = active
 	}
+
+	return any_active
 }

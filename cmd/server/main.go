@@ -16,13 +16,13 @@ func init() {
 		log.Fatal().Err(err).Msg("cannot load configuration")
 	}
 
-	w := tripplite.Watcher{}
+	w := tripplite.NewWatcher()
 	for _, script := range s.Scripts {
-		w.AddScript(script)
+		w.AddScript(script, false)
 	}
 
 	if w.GetSize() > 0 {
-		watcher = &w
+		watcher = w
 	}
 
 	settings = s
@@ -35,7 +35,7 @@ func main() {
 	}
 
 	vid, pid := settings.getVidPid()
-	h := tripplite.NewHttpApp(settings.HistorySize, settings.Delay, settings.Secret)
+	h := NewHttpApp(settings.HistorySize, settings.Delay, settings.Secret)
 
 	if watcher != nil {
 		h.Listeners = append(h.Listeners, watcher)

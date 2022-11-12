@@ -12,14 +12,14 @@ import (
 )
 
 type Settings struct {
-	Listen      string                  `yaml:"listen" env:"UPS_LISTEN" env-default:"0.0.0.0:8080"`
-	Debug       bool                    `yaml:"debug" env:"UPS_DEBUG"`
-	VendorId    string                  `yaml:"vendor_id" env:"UPS_VENDOR_ID"`
-	ProductId   string                  `yaml:"product_id" env:"UPS_PRODUCT_ID"`
-	Delay       time.Duration           `yaml:"delay" env:"UPS_DELAY" env-default:"5s"`
-	HistorySize int                     `yaml:"history_size" env:"UPS_HISTORY_SIZE" env-default:"1000"`
-	Scripts     []tripplite.WatchScript `yaml:"scripts"`
-	Secret      string                  `yaml:"secret" env:"UPS_HMAC_SECRET"`
+	Listen      string             `yaml:"listen" env:"UPS_LISTEN" env-default:"0.0.0.0:8080"`
+	Debug       bool               `yaml:"debug" env:"UPS_DEBUG"`
+	VendorId    string             `yaml:"vendor_id" env:"UPS_VENDOR_ID"`
+	ProductId   string             `yaml:"product_id" env:"UPS_PRODUCT_ID"`
+	Delay       time.Duration      `yaml:"delay" env:"UPS_DELAY" env-default:"5s"`
+	HistorySize int                `yaml:"history_size" env:"UPS_HISTORY_SIZE" env-default:"1000"`
+	Scripts     []tripplite.Script `yaml:"scripts"`
+	Secret      string             `yaml:"secret" env:"UPS_HMAC_SECRET"`
 }
 
 func (s Settings) getVidPid() (uint16, uint16) {
